@@ -121,3 +121,130 @@ print("Modified Rule 2 AST:", modified_rule2)
 print("\nTest Case 8: Evaluate Modified Rules")
 result3 = engine.evaluate_rule(modified_rule2, data)
 print("Evaluation Result for modified rule 2 with data:", data, "=>", result3)
+
+
+
+python
+import requests
+import time
+import sqlite3
+import datetime
+import matplotlib.pyplot as plt
+class WeatherMonitor:
+def __init__(self, api_key, cities, db_name='weather_data.db', interval=300):
+self.api_key = api_key
+self.cities = cities
+self.db_name = db_name
+self.interval = interval # Interval in seconds
+self.temperature_threshold = None
+self.alert_triggered = False
+# Setup database
+self.conn = sqlite3.connect(self.db_name)
+self.create_table()
+def create_table(self): """Create a table to store daily weather summaries.""" with self.conn:
+self.conn.execute(''' CREATE TABLE IF NOT EXISTS daily_summary (
+date TEXT PRIMARY KEY, avg_temp REAL, max_temp REAL, min_temp REAL, dominant_condition TEXT
+)
+''')
+def fetch_weather_data(self): """Fetch weather data from the OpenWeatherMap API.""" weather_data = {}
+for city in self.cities:
+url =
+f"http://api.openweathermap.org/data/2.5/weather?q={city},IN&appid={self.api_key}&units=metric"
+response = requests.get(url)
+if response.status_code == 200:
+data = response.json()
+weather_data[city] = {
+'main': data['weather'][0]['main'],
+'temp': data['main']['temp'],
+'feels_like': data['main']['feels_like'],
+'dt': data['dt']
+}
+else:
+print(f"Failed to retrieve data for {city}. Status code: {response.status_code}")
+return weather_data
+def process_weather_data(self, weather_data): """Process the weather data and store daily summaries."""
+today = datetime.date.today().isoformat()
+if today not in self.get_stored_dates():
+daily_summary = {
+'avg_temp': 0,
+'max_temp': float('-inf'),
+'min_temp': float('inf'),
+'conditions': {}
+}
+for city, data in weather_data.items():
+temp = data['temp']
+condition = data['main']
+# Update daily summary
+daily_summary['avg_temp'] += temp
+daily_summary['max_temp'] = max(daily_summary['max_temp'], temp)
+daily_summary['min_temp'] = min(daily_summary['min_temp'], temp)
+# Count occurrences of each condition
+if condition in daily_summary['conditions']:
+daily_summary['conditions'][condition] += 1
+else:
+daily_summary['conditions'][condition] = 1
+# Finalize average temperature
+city_count = len(self.cities)
+daily_summary['avg_temp'] /= city_count
+# Determine dominant weather condition
+dominant_condition = max(daily_summary['conditions'], key=daily_summary['conditions'].get)
+# Save to database
+self.save_daily_summary(today, daily_summary['avg_temp'], daily_summary['max_temp'], daily_summary['min_temp'], dominant_condition)
+def save_daily_summary(self, date, avg_temp, max_temp, min_temp, dominant_condition):
+"""Save the daily weather summary to the database.""" with self.conn:
+self.conn.execute(''' INSERT INTO daily_summary (date, avg_temp, max_temp, min_temp, dominant_condition)
+VALUES (?, ?, ?, ?, ?)''', (date, avg_temp, max_temp, min_temp, dominant_condition))
+def get_stored_dates(self): """Retrieve stored dates from the database.""" with self.conn:
+return [row[0] for row in self.conn.execute('SELECT date FROM daily_summary')]
+def set_temperature_threshold(self, threshold): """Set a temperature threshold for alerts."""
+self.temperature_threshold = threshold
+def check_alerts(self, weather_data): """Check if any weather data breaches the alert threshold."""
+for city, data in weather_data.items():
+temp = data['temp']
+if self.temperature_threshold and temp > self.temperature_threshold:
+if not self.alert_triggered:
+print(f"Alert! {city}: Temperature exceeded {self.temperature_threshold}°C. Current temp:
+{temp}°C.")
+self.alert_triggered = True
+else:
+self.alert_triggered = False
+def visualize_data(self): """Visualize daily weather summaries using matplotlib.""" dates = []
+avg_temps = []
+max_temps = []
+min_temps = []
+with self.conn:
+cursor = self.conn.execute('SELECT date, avg_temp, max_temp, min_temp FROM
+daily_summary')
+for row in cursor:
+dates.append(row[0])
+avg_temps.append(row[1])
+max_temps.append(row[2])
+min_temps.append(row[3])
+plt.figure(figsize=(10, 5))
+plt.plot(dates, avg_temps, label='Average Temperature', marker='o')
+plt.plot(dates, max_temps, label='Maximum Temperature', marker='o')
+plt.plot(dates, min_temps, label='Minimum Temperature', marker='o')
+plt.title('Daily Weather Summary')
+plt.xlabel('Date')
+plt.ylabel('Temperature (°C)')
+plt.xticks(rotation=45)
+plt.legend()
+plt.tight_layout()
+plt.show()
+def run(self): """Run the weather monitoring system."""
+while True:
+weather_data = self.fetch_weather_data()
+self.process_weather_data(weather_data)
+self.check_alerts(weather_data)
+time.sleep(self.interval)
+# Test the system
+if __name__ == "__main__":
+API_KEY = "your_api_key_here" # Replace with your OpenWeatherMap API key
+CITIES = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad']
+weather_monitor = WeatherMonitor(API_KEY, CITIES)
+weather_monitor.set_temperature_threshold(35) # Set threshold for alerts
+try:
+weather_monitor.run()
+except KeyboardInterrupt:
+print("Stopping the weather monitor.")
+weather_monitor.conn.close()
